@@ -374,7 +374,7 @@ func serialOutWatcher() {
 				_, err := serialPort.Write(b)
 				if err != nil { // Encountered an error in writing to the serial port. Close it and set Serial_out_enabled.
 					log.Printf("serial (out) port err: %s\n", err.Error())
-					serialPort.CLose()
+					serialPort.Close()
 					serialPort = nil
 					globalStatus.Serial_out_enabled = false
 				}
