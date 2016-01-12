@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/tarm/serial"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
 	"io/ioutil"
@@ -100,6 +101,11 @@ func isThrottled(k string) bool {
 }
 
 func sendToAllConnectedClients(msg networkMessage) {
+	if ((msg.msgType & NETWORK_GDL90_STANDARD) != 0) && globalStatus.Serial_out_enabled {
+		// It's a GDL90 message and serial output is enabled. Send the message to the serial port writer goroutine.
+		serialOutputChan <- msg.msg
+	}
+
 	netMutex.Lock()
 	defer netMutex.Unlock()
 	for k, netconn := range outSockets {
@@ -339,8 +345,47 @@ func sleepMonitor() {
 	}
 }
 
+var serialOutputChan chan []byte
+
+// Watch for a serial output device.
+func serialOutWatcher() {
+	// Check every 30 seconds for a serial output device.
+	serialTicker := time.NewTicker(30 * time.Second)
+	serialConfig := &serial.Config{Name: "/dev/ttyUSB0", Baud: 38400}
+	var serialPort *serial.Port
+
+	for {
+		select {
+		case <-serialTicker.C:
+			// Check for serial output device.
+			if !globalStatus.Serial_out_enabled {
+				p, err := serial.OpenPort(serialConfig)
+				if err != nil {
+					log.Printf("serial (out) port err: %s\n", err.Error())
+					break
+				}
+				globalSettings.GPS_Enabled = false // Force disable GPS when serial enabled.
+				globalStatus.Serial_out_enabled = true
+				serialPort = p
+				log.Printf("opened serial port /dev/ttyUSB0\n")
+			}
+		case b := <-serialOutputChan:
+			if globalStatus.Serial_out_enabled && serialPort != nil {
+				_, err := serialPort.Write(b)
+				if err != nil { // Encountered an error in writing to the serial port. Close it and set Serial_out_enabled.
+					log.Printf("serial (out) port err: %s\n", err.Error())
+					serialPort.CLose()
+					serialPort = nil
+					globalStatus.Serial_out_enabled = false
+				}
+			}
+		}
+	}
+}
+
 func initNetwork() {
 	messageQueue = make(chan networkMessage, 1024) // Buffered channel, 1024 messages.
+	serialOutputChan = make(chan []byte, 1024)     // Buffered channel, 1024 GDL90 messages.
 	outSockets = make(map[string]networkConnection)
 	pingResponse = make(map[string]time.Time)
 	netMutex = &sync.Mutex{}
@@ -348,4 +393,5 @@ func initNetwork() {
 	go monitorDHCPLeases()
 	go messageQueueSender()
 	go sleepMonitor()
+	go serialOutWatcher()
 }

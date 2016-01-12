@@ -996,6 +996,7 @@ type status struct {
 	RY835AI_connected        bool
 	Uptime                   int64
 	CPUTemp                  float32
+	Serial_out_enabled       bool
 }
 
 var globalSettings settings
