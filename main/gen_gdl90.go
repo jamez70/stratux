@@ -745,6 +745,10 @@ type WeatherMessage struct {
 	Time              string
 	Data              string
 	LocaltimeReceived time.Time
+	Ticks			  int64
+	TowerLon		  float64
+	TowerLat		  float64
+	TisId             byte
 }
 
 // Send update to connected websockets.
