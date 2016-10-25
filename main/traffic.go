@@ -75,6 +75,7 @@ const (
 )
 
 type TrafficInfo struct {
+	Type		    string    // Type needed for 'Avare'
 	Icao_addr           uint32
 	Reg                 string    // Registration. Calculated from Icao_addr for civil aircraft of US registry.
 	Tail                string    // Callsign. Transmitted by aircraft.
@@ -193,7 +194,7 @@ func sendTrafficUpdates() {
 		}
 		ti.Age = stratuxClock.Since(ti.Last_seen).Seconds()
 		ti.AgeLastAlt = stratuxClock.Since(ti.Last_alt).Seconds()
-
+		ti.Type = "traffic"
 		// DEBUG: Print the list of all tracked targets (with data) to the log every 15 seconds if "DEBUG" option is enabled
 		if globalSettings.DEBUG && (stratuxClock.Time.Second()%15) == 0 {
 			s_out, err := json.Marshal(ti)

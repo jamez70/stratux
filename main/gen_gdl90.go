@@ -773,6 +773,10 @@ func registerADSBTextMessageReceived(msg string, uatMsg *uatparse.UATMsg) {
 	wm.Time = x[2]
 	wm.Data = strings.Join(x[3:], " ")
 	wm.LocaltimeReceived = stratuxClock.Time
+	wm.TowerLon = uatMsg.Lon
+	wm.TowerLat = uatMsg.Lat
+	uatTime := time.Date(2016, time.Month(uatMsg.Frames[0].FISB_month),int(uatMsg.Frames[0].FISB_day), int(uatMsg.Frames[0].FISB_hours), int(uatMsg.Frames[0].FISB_minutes), int(uatMsg.Frames[0].FISB_seconds), 0, time.UTC)
+	wm.Ticks = uatTime.UnixNano() / 1000000
 
 	// Send to weatherUpdate channel for any connected clients.
 	weatherUpdate.SendJSON(wm)
@@ -888,7 +892,12 @@ func parseInput(buf string) ([]byte, uint16) {
 			for _, f := range uatMsg.Frames {
 				thisMsg.Products = append(thisMsg.Products, f.Product_id)
 				UpdateUATStats(f.Product_id)
-				weatherRawUpdate.SendJSON(f)
+				switch(f.Product_id) {
+					// I'd rather handle 413 with 'weather' updates, since this JSON
+					// data was overloading avare. We will add more types here shortly
+					case 63,64:
+					weatherRawUpdate.SendJSON(f)
+				}
 			}
 			// Get all of the text reports.
 			textReports, _ := uatMsg.GetTextReports()

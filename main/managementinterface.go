@@ -75,6 +75,8 @@ func handleJsonIo(conn *websocket.Conn) {
 	// Subscribe the socket to receive updates.
 	trafficUpdate.AddSocket(conn)
 	weatherRawUpdate.AddSocket(conn)
+	// Lets leave weatherupdate here since they are smaller and easier to handle - why parse twice
+	weatherUpdate.AddSocket(conn)
 	situationUpdate.AddSocket(conn)
 
 	trafficMutex.Unlock()

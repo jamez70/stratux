@@ -12,6 +12,8 @@ const (
 
 type NEXRADBlock struct {
 	Radar_Type uint32
+	// Block here until changed to lat, lon
+	Block	   int
 	Scale      int
 	LatNorth   float64
 	LonWest    float64
@@ -73,6 +75,7 @@ func (f *UATFrame) decodeNexradFrame() {
 	if rle_flag { // Single bin, RLE encoded.
 		lat, lon, h, w := block_location(block_num, ns_flag, scale_factor)
 		var tmp NEXRADBlock
+		tmp.Block = block_num
 		tmp.Radar_Type = f.Product_id
 		tmp.Scale = scale_factor
 		tmp.LatNorth = lat
