@@ -504,9 +504,10 @@ func (f *UATFrame) decodeInfoFrame() {
 			case 8, 11, 13:
 				f.decodeAirmet()
 		*/
-	case 63, 64:
-		f.decodeNexradFrame()
-
+//	case  63, 64:
+//		log.Printf("Trying to decode NEXRAD type %d\n",f.Product_id)
+//		f.decodeNexradFrame()
+		
 	default:
 		fmt.Fprintf(ioutil.Discard, "don't know what to do with product id: %d\n", f.Product_id)
 	}

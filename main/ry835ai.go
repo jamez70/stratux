@@ -55,6 +55,7 @@ type SatelliteInfo struct {
 type SituationData struct {
 	mu_GPS *sync.Mutex
 
+	Type                     string
 	// From GPS.
 	LastFixSinceMidnightUTC  float32
 	Lat                      float32
@@ -1609,6 +1610,7 @@ func pollRY835AI() {
 func initRY835AI() {
 	mySituation.mu_GPS = &sync.Mutex{}
 	mySituation.mu_Attitude = &sync.Mutex{}
+	mySituation.Type = "situation"
 	satelliteMutex = &sync.Mutex{}
 	Satellites = make(map[string]SatelliteInfo)
 
