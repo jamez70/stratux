@@ -235,6 +235,7 @@ func registerTrafficUpdate(ti TrafficInfo) {
 			return
 		}
 	*/ // Send all traffic to the websocket and let JS sort it out. This will provide user indication of why they see 1000 ES messages and no traffic.
+	ti.Type = "traffic"
 	trafficUpdate.SendJSON(ti)
 }
 
