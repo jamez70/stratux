@@ -57,9 +57,16 @@ type serialConnection struct {
 	serialPort   *serial.Port
 }
 
+type websockConnection struct {
+	StartTime time.Time
+	Host      string
+}
+
 var messageQueue chan networkMessage
 var outSockets map[string]networkConnection
 var dhcpLeases map[string]string
+var websockConnections map[string]websockConnection
+
 var netMutex *sync.Mutex
 
 var totalNetworkMessagesSent uint32
@@ -300,6 +307,7 @@ func refreshConnectedClients() {
 		return
 	}
 	dhcpLeases = t
+
 	// Client connected that wasn't before.
 	for ip, hostname := range dhcpLeases {
 		for _, networkOutput := range globalSettings.NetworkOutputs {
@@ -330,6 +338,23 @@ func refreshConnectedClients() {
 			delete(outSockets, ipAndPort)
 		}
 	}
+}
+
+func addWebsocketClient(index string) {
+	var ws websockConnection
+	log.Printf("Adding websocket client %s\n", index)
+	ws.StartTime = stratuxClock.Time
+	ws.Host = index
+	websockConnections[index] = ws
+}
+
+func removeWebsocketClient(index string) {
+	log.Printf("Deleting websocket client %s\n", index)
+	delete(websockConnections, index)
+}
+
+func getWebsocketClientCount() int {
+	return len(websockConnections)
 }
 
 func messageQueueSender() {
@@ -615,6 +640,8 @@ func initNetwork() {
 	networkGDL90Chan = make(chan []byte, 1024)
 	outSockets = make(map[string]networkConnection)
 	pingResponse = make(map[string]time.Time)
+	websockConnections = make(map[string]websockConnection)
+
 	netMutex = &sync.Mutex{}
 	refreshConnectedClients()
 	go monitorDHCPLeases()

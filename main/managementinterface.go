@@ -33,9 +33,16 @@ type SettingMessage struct {
 }
 
 // Weather updates channel.
+var weatherWatchedUpdate *uibroadcaster
 var weatherUpdate *uibroadcaster
 var trafficUpdate *uibroadcaster
 var gdl90Update *uibroadcaster
+
+// Situation updates channel.
+var situationUpdate *uibroadcaster
+
+// Raw weather (UATFrame packet stream) update channel.
+var weatherRawUpdate *uibroadcaster
 
 func handleGDL90WS(conn *websocket.Conn) {
 	// Subscribe the socket to receive updates.
@@ -55,11 +62,22 @@ func handleGDL90WS(conn *websocket.Conn) {
 	}
 }
 
-// Situation updates channel.
-var situationUpdate *uibroadcaster
+func handleWeatherUpdateWS(conn *websocket.Conn) {
 
-// Raw weather (UATFrame packet stream) update channel.
-var weatherRawUpdate *uibroadcaster
+	timer := time.NewTicker(5 * time.Second)
+	//    weatherWatchedUpdate.AddSocket(conn)
+	// Connection closes when function returns. Since uibroadcast is writing and we don't need to read anything (for now), just keep it busy.
+	for {
+		update, _ := json.Marshal(&WatchedStations)
+		_, err := conn.Write(update)
+
+		if err != nil {
+			log.Printf("watched weather client disconnected.\n")
+			break
+		}
+		<-timer.C
+	}
+}
 
 /*
 	The /weather websocket starts off by sending the current buffer of weather messages, then sends updates as they are received.
@@ -83,6 +101,8 @@ func handleWeatherWS(conn *websocket.Conn) {
 }
 
 func handleJsonIo(conn *websocket.Conn) {
+	var clientStr string
+
 	trafficMutex.Lock()
 	for _, traf := range traffic {
 		if !traf.Position_valid { // Don't send unless a valid position exists.
@@ -91,21 +111,30 @@ func handleJsonIo(conn *websocket.Conn) {
 		trafficJSON, _ := json.Marshal(&traf)
 		conn.Write(trafficJSON)
 	}
+
 	// Subscribe the socket to receive updates.
 	trafficUpdate.AddSocket(conn)
 	weatherRawUpdate.AddSocket(conn)
+	// Lets leave weatherupdate here since they are smaller and easier to handle - why parse twice
+	weatherUpdate.AddSocket(conn)
 	situationUpdate.AddSocket(conn)
 
 	trafficMutex.Unlock()
+	// Register the connection in the websocket list
 
+	clientStr = conn.Request().RemoteAddr
+	addWebsocketClient(clientStr)
 	// Connection closes when function returns. Since uibroadcast is writing and we don't need to read anything (for now), just keep it busy.
 	for {
 		buf := make([]byte, 1024)
 		_, err := conn.Read(buf)
 		if err != nil {
+			removeWebsocketClient(clientStr)
 			break
 		}
 		if buf[0] != 0 { // Dummy.
+			strbuf := string(buf)
+			log.Printf("Read %s from jsonio socket\n", strbuf)
 			continue
 		}
 		time.Sleep(1 * time.Second)
@@ -159,7 +188,6 @@ func handleStatusWS(conn *websocket.Conn) {
 		*/
 
 		// Send status.
-		<-timer.C
 		update, _ := json.Marshal(&globalStatus)
 		_, err := conn.Write(update)
 
@@ -167,6 +195,7 @@ func handleStatusWS(conn *websocket.Conn) {
 			//			log.Printf("Web client disconnected.\n")
 			break
 		}
+		<-timer.C
 	}
 }
 
@@ -266,6 +295,14 @@ func handleSettingsSetRequest(w http.ResponseWriter, r *http.Request) {
 				for key, val := range msg {
 					// log.Printf("handleSettingsSetRequest:json: testing for key:%s of type %s\n", key, reflect.TypeOf(val))
 					switch key {
+					case "RecordSituation":
+						globalSettings.RecordSituation = val.(bool)
+					case "RecordTraffic":
+						globalSettings.RecordTraffic = val.(bool)
+					case "RecordUAT":
+						globalSettings.RecordUAT = val.(bool)
+					case "Record1090ES":
+						globalSettings.Record1090ES = val.(bool)
 					case "UAT_Enabled":
 						globalSettings.UAT_Enabled = val.(bool)
 					case "ES_Enabled":
@@ -345,6 +382,11 @@ func doReboot() {
 	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 }
 
+func handleDeleteLogFile(w http.ResponseWriter, r *http.Request) {
+	log.Printf("handleDeleteLogFile called!!!\n")
+	clearDebugLogFile()
+}
+
 func handleDevelModeToggle(w http.ResponseWriter, r *http.Request) {
 	log.Printf("handleDevelModeToggle called!!!\n")
 	globalSettings.DeveloperMode = true
@@ -375,6 +417,23 @@ func doRestartApp() {
 	}
 }
 
+func doTrackStartRecording() {
+	if globalStatus.TrackIsRecording == true {
+		log.Printf("Track is already recording!\n")
+		return
+	}
+	log.Printf("Start track recording here!\n")
+	startTrackLog(time.Now())
+}
+
+func doTrackStopRecording() {
+	if globalStatus.TrackIsRecording == true {
+		log.Printf("Do STOP recording here\n")
+		stopTrackLog()
+	}
+	globalStatus.TrackIsRecording = false
+}
+
 // AJAX call - /getClients. Responds with all connected clients.
 func handleClientsGetRequest(w http.ResponseWriter, r *http.Request) {
 	setNoCache(w)
@@ -386,6 +445,28 @@ func handleClientsGetRequest(w http.ResponseWriter, r *http.Request) {
 func delayReboot() {
 	time.Sleep(1 * time.Second)
 	doReboot()
+}
+
+func handleTrackRecordingRequest(w http.ResponseWriter, r *http.Request) {
+	log.Printf("handleTrackRecordingRequest called\n")
+	go doTrackStartRecording()
+}
+
+func handleTrackStopRequest(w http.ResponseWriter, r *http.Request) {
+	log.Printf("handleTrackStopRequest called\n")
+	go doTrackStopRecording()
+}
+
+func handleDownloadLogRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "applicaiton/zip")
+	w.Header().Set("Content-Disposition", "attachment; filename='stratux.log'")
+	http.ServeFile(w, r, "/var/log/stratux.log")
+}
+
+func handleDownloadDBRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "applicaiton/zip")
+	w.Header().Set("Content-Disposition", "attachment; filename='stratux.sqlite'")
+	http.ServeFile(w, r, "/var/log/stratux.sqlite")
 }
 
 // Upload an update file.
@@ -486,6 +567,43 @@ div.foot { font: 90% monospace; color: #787878; padding-top: 4px;}
 </body>
 </html>`
 
+const dirlisting_tpl_track = `<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+<!-- Modified from lighttpd directory listing -->
+<head>
+<title>Index of {{.Name}}</title>
+<style type="text/css">
+a, a:active {text-decoration: none; color: blue;}
+a:visited {color: #48468F;}
+a:hover, a:focus {text-decoration: underline; color: red;}
+body {background-color: #F5F5F5;}
+h2 {margin-bottom: 12px;}
+table {margin-left: 12px;}
+th, td { font: 90% monospace; text-align: left;}
+th { font-weight: bold; padding-right: 14px; padding-bottom: 3px;}
+td {padding-right: 14px;}
+td.s, th.s {text-align: right;}
+div.list { background-color: white; border-top: 1px solid #646464; border-bottom: 1px solid #646464; padding-top: 10px; padding-bottom: 14px;}
+div.foot { font: 90% monospace; color: #787878; padding-top: 4px;}
+</style>
+</head>
+<body>
+<h2>Index of {{.Name}}</h2>
+<div class="list">
+<table summary="Directory Listing" cellpadding="0" cellspacing="0">
+<thead><tr><th class="n">Name</th><th>Last Modified</th><th>Size (bytes)</th><th class="dl">Options</th><th class="dl">Export</th></tr></thead>
+<tbody>
+{{range .Children_files}}
+<tr><td class="n"><a href="/tracklogs/{{.Name}}">{{.Name}}</a></td><td>{{.Mtime}}</td><td>{{.Size}}</td><td class="dl"><a href="/tracklogs/{{.Name}}">Download</a></td><td>Export KML</td></tr>
+{{end}}
+</tbody>
+</table>
+</div>
+<div class="foot">{{.ServerUA}}</div>
+</body>
+</html>`
+
 type fileInfo struct {
 	Name  string
 	Mtime string
@@ -534,16 +652,53 @@ func viewLogs(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func trackLogs(w http.ResponseWriter, r *http.Request) {
+
+	names, err := ioutil.ReadDir(TRACKLOG_DIRECTORY)
+	if err != nil {
+		return
+	}
+
+	fi := make([]fileInfo, 0)
+	for _, val := range names {
+		if val.Name()[0] == '.' {
+			continue
+		} // Remove hidden files from listing
+
+		if !val.IsDir() {
+			mtime := val.ModTime().Format("2006-Jan-02 15:04:05")
+			sz := humanize.Comma(val.Size())
+			fi = append(fi, fileInfo{Name: val.Name(), Mtime: mtime, Size: sz})
+		}
+	}
+
+	tpl, err := template.New("tpl").Parse(dirlisting_tpl_track)
+	if err != nil {
+		return
+	}
+	data := dirlisting{Name: r.URL.Path, ServerUA: "Stratux " + stratuxVersion + "/" + stratuxBuild,
+		Children_files: fi}
+
+	err = tpl.Execute(w, data)
+	if err != nil {
+		log.Printf("trackLogs() error: %s\n", err.Error())
+	}
+
+}
+
 func managementInterface() {
 	weatherUpdate = NewUIBroadcaster()
 	trafficUpdate = NewUIBroadcaster()
 	situationUpdate = NewUIBroadcaster()
 	weatherRawUpdate = NewUIBroadcaster()
+	weatherWatchedUpdate = NewUIBroadcaster()
 	gdl90Update = NewUIBroadcaster()
 
 	http.HandleFunc("/", defaultServer)
 	http.Handle("/logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir("/var/log"))))
+	http.Handle("/tracklogs/", http.StripPrefix("/tracklogs/", http.FileServer(http.Dir("/root/tracklog"))))
 	http.HandleFunc("/view_logs/", viewLogs)
+	http.HandleFunc("/view_tracklog/", trackLogs)
 
 	http.HandleFunc("/gdl90",
 		func(w http.ResponseWriter, req *http.Request) {
@@ -567,6 +722,12 @@ func managementInterface() {
 		func(w http.ResponseWriter, req *http.Request) {
 			s := websocket.Server{
 				Handler: websocket.Handler(handleWeatherWS)}
+			s.ServeHTTP(w, req)
+		})
+	http.HandleFunc("/weatherwatched",
+		func(w http.ResponseWriter, req *http.Request) {
+			s := websocket.Server{
+				Handler: websocket.Handler(handleWeatherUpdateWS)}
 			s.ServeHTTP(w, req)
 		})
 	http.HandleFunc("/traffic",
@@ -596,7 +757,11 @@ func managementInterface() {
 	http.HandleFunc("/updateUpload", handleUpdatePostRequest)
 	http.HandleFunc("/roPartitionRebuild", handleroPartitionRebuild)
 	http.HandleFunc("/develmodetoggle", handleDevelModeToggle)
-
+	http.HandleFunc("/deletelogfile", handleDeleteLogFile)
+	http.HandleFunc("/downloadlog", handleDownloadLogRequest)
+	http.HandleFunc("/downloaddb", handleDownloadDBRequest)
+	http.HandleFunc("/starttrack", handleTrackRecordingRequest)
+	http.HandleFunc("/stoptrack", handleTrackStopRequest)
 	err := http.ListenAndServe(managementAddr, nil)
 
 	if err != nil {

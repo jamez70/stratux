@@ -77,6 +77,7 @@ const (
 	TRACK_RESOLUTION   = float32(360.0 / 256.0)
 )
 
+var logFileHandle *os.File
 var usage *du.DiskUsage
 
 var maxSignalStrength int
@@ -129,6 +130,85 @@ type ADSBTower struct {
 
 var ADSBTowers map[string]ADSBTower // Running list of all towers seen. (lat,lng) -> ADSBTower
 var ADSBTowerMutex *sync.Mutex
+
+type settings struct {
+	UAT_Enabled          bool
+	ES_Enabled           bool
+	Ping_Enabled         bool
+	GPS_Enabled          bool
+	NetworkOutputs       []networkConnection
+	SerialOutputs        map[string]serialConnection
+	AHRS_Enabled         bool
+	DisplayTrafficSource bool
+	DEBUG                bool
+	ReplayLog            bool
+	PPM                  int
+	OwnshipModeS         string
+	WatchList            string
+	DeveloperMode        bool
+	RecordSituation      bool
+	RecordTraffic        bool
+	RecordUAT            bool
+	Record1090ES         bool
+	replayPing           bool
+}
+
+type status struct {
+	Version                                    string
+	Build                                      string
+	HardwareBuild                              string
+	Devices                                    uint32
+	Connected_Users                            uint
+	DiskBytesFree                              uint64
+	UAT_messages_last_minute                   uint
+	UAT_messages_max                           uint
+	ES_messages_last_minute                    uint
+	ES_messages_max                            uint
+	UAT_traffic_targets_tracking               uint16
+	ES_traffic_targets_tracking                uint16
+	Ping_connected                             bool
+	GPS_satellites_locked                      uint16
+	GPS_satellites_seen                        uint16
+	GPS_satellites_tracked                     uint16
+	GPS_position_accuracy                      float32
+	GPS_connected                              bool
+	GPS_solution                               string
+	RY835AI_connected                          bool
+	Uptime                                     int64
+	UptimeClock                                time.Time
+	CPUTemp                                    float32
+	NetworkDataMessagesSent                    uint64
+	NetworkDataMessagesSentNonqueueable        uint64
+	NetworkDataBytesSent                       uint64
+	NetworkDataBytesSentNonqueueable           uint64
+	NetworkDataMessagesSentLastSec             uint64
+	NetworkDataMessagesSentNonqueueableLastSec uint64
+	NetworkDataBytesSentLastSec                uint64
+	NetworkDataBytesSentNonqueueableLastSec    uint64
+	UAT_METAR_total                            uint32
+	UAT_TAF_total                              uint32
+	UAT_NEXRAD_total                           uint32
+	UAT_SIGMET_total                           uint32
+	UAT_PIREP_total                            uint32
+	UAT_NOTAM_total                            uint32
+	UAT_OTHER_total                            uint32
+	Errors                                     []string
+	Logfile_Size                               int64
+	WebsocketClientCount                       int
+	TrackIsRecording                           bool
+	TrackRecordingStatus                       string
+}
+
+type watchedStationType struct {
+	MsgType  string
+	Location string
+	Time     string
+	Data     string
+}
+
+var globalSettings settings
+var globalStatus status
+var WatchedStations []watchedStationType
 
 // Construct the CRC table. Adapted from FAA ref above.
 func crcInit() {
@@ -190,7 +270,6 @@ func makeLatLng(v float32) []byte {
 	ret[0] = byte((wk & 0xFF0000) >> 16)
 	ret[1] = byte((wk & 0x00FF00) >> 8)
 	ret[2] = byte((wk & 0x0000FF))
-
 	return ret
 }
 
@@ -556,9 +635,6 @@ func heartBeatSender() {
 	for {
 		select {
 		case <-timer.C:
-			// Turn on green ACT LED on the Pi.
-			ioutil.WriteFile("/sys/class/leds/led0/brightness", []byte("1\n"), 0644)
-
 			sendGDL90(makeHeartbeat(), false)
 			sendGDL90(makeStratuxHeartbeat(), false)
 			sendGDL90(makeStratuxStatus(), false)
@@ -676,7 +752,6 @@ func isCPUTempValid() bool {
 func cpuTempMonitor() {
 	timer := time.NewTicker(1 * time.Second)
 	for {
-		<-timer.C
 
 		// Update CPUTemp.
 		temp, err := ioutil.ReadFile("/sys/class/thermal/thermal_zone0/temp")
@@ -695,6 +770,7 @@ func cpuTempMonitor() {
 		if t >= -99.0 { // Only update if valid value was obtained.
 			globalStatus.CPUTemp = t
 		}
+		<-timer.C
 
 	}
 }
@@ -737,6 +813,12 @@ func updateStatus() {
 
 	usage = du.NewDiskUsage("/")
 	globalStatus.DiskBytesFree = usage.Free()
+	fileInfo, err := logFileHandle.Stat()
+	if err == nil {
+		globalStatus.Logfile_Size = fileInfo.Size()
+	}
+
+	globalStatus.WebsocketClientCount = getWebsocketClientCount()
 }
 
 type WeatherMessage struct {
@@ -745,6 +827,15 @@ type WeatherMessage struct {
 	Time              string
 	Data              string
 	LocaltimeReceived time.Time
+	Ticks             int64
+	TowerLon          float64
+	TowerLat          float64
+	TisId             byte
+}
+
+type gdl90NetMessage struct {
+	Type string
+	data []byte
 }
 
 // Send update to connected websockets.
@@ -755,6 +846,7 @@ func registerADSBTextMessageReceived(msg string, uatMsg *uatparse.UATMsg) {
 	}
 
 	var wm WeatherMessage
+	var dataStr string
 
 	if (x[0] == "METAR") || (x[0] == "SPECI") {
 		globalStatus.UAT_METAR_total++
@@ -772,10 +864,52 @@ func registerADSBTextMessageReceived(msg string, uatMsg *uatparse.UATMsg) {
 	wm.Location = x[1]
 	wm.Time = x[2]
 	wm.Data = strings.Join(x[3:], " ")
+	dataStr = wm.Data
 	wm.LocaltimeReceived = stratuxClock.Time
+	wm.TowerLon = uatMsg.Lon
+	wm.TowerLat = uatMsg.Lat
+	//	now := time.Now()
+	//	Year := time.Year()
+	uatTime := time.Date(2016, time.Month(uatMsg.Frames[0].FISB_month), int(uatMsg.Frames[0].FISB_day), int(uatMsg.Frames[0].FISB_hours), int(uatMsg.Frames[0].FISB_minutes), int(uatMsg.Frames[0].FISB_seconds), 0, time.UTC)
+	wm.Ticks = uatTime.UnixNano() / 1000000
+	//	wmJSON, _ := json.Marshal(&wm)
 
 	// Send to weatherUpdate channel for any connected clients.
 	weatherUpdate.SendJSON(wm)
+
+	var wxType string
+	wxType = x[0]
+	if wxType == "SPECI" {
+		wxType = "METAR"
+	}
+	if wxType == "TAF.AMD" {
+		wxType = "TAF"
+	}
+	// Update the watch list here
+	// We look to see if the name is in the list, and if not, we exit
+	if strings.Contains(globalSettings.WatchList, x[1]) {
+		// If the list is empty, add this report and return
+		for wx := range WatchedStations {
+			//        log.Printf("wsplit[1] %s x[1] %s\n",wsplit[1],x[1])
+			// If the station ID and type match, then overwrite the string
+			if WatchedStations[wx].MsgType == wxType && WatchedStations[wx].Location == x[1] {
+				log.Printf("Updated position %d, station %s to %s\n", wx, x[1], msg)
+				WatchedStations[wx].Time = x[2]
+				WatchedStations[wx].Data = dataStr
+				//                weatherWatchedUpdate.SendJSON(WatchedStations)
+				return
+			}
+		}
+		// The type is not in the list, so lets add the string and return
+		log.Printf("add %s %s to the list, size is %d\n", x[0], x[1], len(WatchedStations))
+		var thisWatch watchedStationType
+		thisWatch.MsgType = wxType
+		thisWatch.Location = x[1]
+		thisWatch.Time = x[2]
+		thisWatch.Data = dataStr
+		WatchedStations = append(WatchedStations, thisWatch)
+		//        weatherWatchedUpdate.SendJSON(WatchedStations)
+	}
 }
 
 func UpdateUATStats(ProductID uint32) {
@@ -797,6 +931,7 @@ func UpdateUATStats(ProductID uint32) {
 		// Do nothing in the case since text is recorded elsewhere
 		return
 	default:
+		log.Printf("UAT Other received %d\n", ProductID)
 		globalStatus.UAT_OTHER_total++
 	}
 }
@@ -888,7 +1023,12 @@ func parseInput(buf string) ([]byte, uint16) {
 			for _, f := range uatMsg.Frames {
 				thisMsg.Products = append(thisMsg.Products, f.Product_id)
 				UpdateUATStats(f.Product_id)
-				weatherRawUpdate.SendJSON(f)
+				switch f.Product_id {
+				// I'd rather handle 413 with 'weather' updates, since this JSON
+				// data was overloading avare. We will add more types here shortly
+				case 63, 64:
+					weatherRawUpdate.SendJSON(f)
+				}
 			}
 			// Get all of the text reports.
 			textReports, _ := uatMsg.GetTextReports()
@@ -977,69 +1117,6 @@ func getProductNameFromId(product_id int) string {
 	return fmt.Sprintf("Unknown (%d)", product_id)
 }
 
-type settings struct {
-	UAT_Enabled          bool
-	ES_Enabled           bool
-	Ping_Enabled         bool
-	GPS_Enabled          bool
-	NetworkOutputs       []networkConnection
-	SerialOutputs        map[string]serialConnection
-	AHRS_Enabled         bool
-	DisplayTrafficSource bool
-	DEBUG                bool
-	ReplayLog            bool
-	PPM                  int
-	OwnshipModeS         string
-	WatchList            string
-	DeveloperMode        bool
-}
-
-type status struct {
-	Version                                    string
-	Build                                      string
-	HardwareBuild                              string
-	Devices                                    uint32
-	Connected_Users                            uint
-	DiskBytesFree                              uint64
-	UAT_messages_last_minute                   uint
-	UAT_messages_max                           uint
-	ES_messages_last_minute                    uint
-	ES_messages_max                            uint
-	UAT_traffic_targets_tracking               uint16
-	ES_traffic_targets_tracking                uint16
-	Ping_connected                             bool
-	GPS_satellites_locked                      uint16
-	GPS_satellites_seen                        uint16
-	GPS_satellites_tracked                     uint16
-	GPS_position_accuracy                      float32
-	GPS_connected                              bool
-	GPS_solution                               string
-	RY835AI_connected                          bool
-	Uptime                                     int64
-	UptimeClock                                time.Time
-	CPUTemp                                    float32
-	NetworkDataMessagesSent                    uint64
-	NetworkDataMessagesSentNonqueueable        uint64
-	NetworkDataBytesSent                       uint64
-	NetworkDataBytesSentNonqueueable           uint64
-	NetworkDataMessagesSentLastSec             uint64
-	NetworkDataMessagesSentNonqueueableLastSec uint64
-	NetworkDataBytesSentLastSec                uint64
-	NetworkDataBytesSentNonqueueableLastSec    uint64
-	UAT_METAR_total                            uint32
-	UAT_TAF_total                              uint32
-	UAT_NEXRAD_total                           uint32
-	UAT_SIGMET_total                           uint32
-	UAT_PIREP_total                            uint32
-	UAT_NOTAM_total                            uint32
-	UAT_OTHER_total                            uint32
-
-	Errors []string
-}
-
-var globalSettings settings
-var globalStatus status
-
 func defaultSettings() {
 	globalSettings.UAT_Enabled = true
 	globalSettings.ES_Enabled = true
@@ -1053,8 +1130,13 @@ func defaultSettings() {
 	globalSettings.DEBUG = false
 	globalSettings.DisplayTrafficSource = false
 	globalSettings.ReplayLog = false //TODO: 'true' for debug builds.
+	globalSettings.replayPing = false
 	globalSettings.OwnshipModeS = "F00000"
 	globalSettings.DeveloperMode = false
+	globalSettings.Record1090ES = true
+	globalSettings.RecordSituation = true
+	globalSettings.RecordTraffic = true
+	globalSettings.RecordUAT = true
 }
 
 func readSettings() {
@@ -1151,6 +1233,47 @@ func printStats() {
 
 var uatReplayDone bool
 
+func uatPingReplay(f ReadCloser, replaySpeed uint64) {
+	defer f.Close()
+	rdr := bufio.NewReader(f)
+	curTick := int64(0)
+	for {
+		buf, err := rdr.ReadString('\n')
+		if err != nil {
+			break
+		}
+		linesplit := strings.Split(buf, ",")
+		if len(linesplit) < 2 { // Blank line or invalid.
+			continue
+		}
+		if linesplit[0] == "START" { // Reset ticker, new start.
+			curTick = 0
+		} else { // If it's not "START", then it's a tick count.
+			i, err := strconv.ParseInt(linesplit[0], 10, 64)
+			if err != nil {
+				log.Printf("invalid tick: '%s'\n", linesplit[0])
+				continue
+			}
+			thisWait := (i - curTick) / int64(replaySpeed)
+
+			if thisWait >= 120 { // More than 2 minutes wait, skip ahead.
+				log.Printf("UAT skipahead - %d seconds.\n", thisWait)
+			} else {
+				time.Sleep(time.Duration(thisWait) * time.Millisecond * 400) // Just in case the units change.
+			}
+
+			p := strings.Trim(linesplit[1], " ;\r\n")
+			buf := fmt.Sprintf("%s;\n", p)
+			o, msgtype := parseInput(buf)
+			if o != nil && msgtype != 0 {
+				relayMessage(msgtype, o)
+			}
+			curTick = i
+		}
+	}
+	uatReplayDone = true
+}
+
 func uatReplay(f ReadCloser, replaySpeed uint64) {
 	defer f.Close()
 	rdr := bufio.NewReader(f)
@@ -1231,15 +1354,47 @@ func gracefulShutdown() {
 
 	//TODO: Any other graceful shutdown functions.
 
-	// Turn off green ACT LED on the Pi.
-	ioutil.WriteFile("/sys/class/leds/led0/brightness", []byte("0\n"), 0644)
 	os.Exit(1)
+}
+
+func reopenLogFile() {
+	// Duplicate log.* output to debugLog.
+	fp, err := os.OpenFile(debugLogf, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		err_log := fmt.Errorf("Failed to open '%s': %s", debugLogf, err.Error())
+		addSystemError(err_log)
+		log.Printf("%s\n", err_log.Error())
+	} else {
+		defer fp.Close()
+		mfp := io.MultiWriter(fp, os.Stdout)
+		log.SetOutput(mfp)
+	}
+
+	log.Printf("Stratux %s (%s) starting.\n", stratuxVersion, stratuxBuild)
+
 }
 
 func signalWatcher() {
 	sig := <-sigs
 	log.Printf("signal caught: %s - shutting down.\n", sig.String())
 	gracefulShutdown()
+}
+
+func clearDebugLogFile() {
+	if logFileHandle != nil {
+		_, err := logFileHandle.Seek(0, 0)
+		if err != nil {
+			log.Printf("Could not seek to the beginning of the logfile\n")
+			return
+		} else {
+			err2 := logFileHandle.Truncate(0)
+			if err2 != nil {
+				log.Printf("Could not truncate the logfile\n")
+				return
+			}
+			log.Printf("Logfile truncated\n")
+		}
+	}
 }
 
 func main() {
@@ -1252,7 +1407,10 @@ func main() {
 	// Set up status.
 	globalStatus.Version = stratuxVersion
 	globalStatus.Build = stratuxBuild
+	globalStatus.TrackIsRecording = false
+	globalStatus.TrackRecordingStatus = "Not Recording"
 	globalStatus.Errors = make([]string, 0)
+	WatchedStations = make([]watchedStationType, 0)
 	//FlightBox: detect via presence of /etc/FlightBox file.
 	if _, err := os.Stat("/etc/FlightBox"); !os.IsNotExist(err) {
 		globalStatus.HardwareBuild = "FlightBox"
@@ -1292,7 +1450,7 @@ func main() {
 	replayFlag := flag.Bool("replay", false, "Replay file flag")
 	replaySpeed := flag.Int("speed", 1, "Replay speed multiplier")
 	stdinFlag := flag.Bool("uatin", false, "Process UAT messages piped to stdin")
-
+	pingLogReplay := flag.Bool("pingreplay", false, "Replay Ping EFB log file")
 	flag.Parse()
 
 	timeStarted = time.Now()
@@ -1306,6 +1464,8 @@ func main() {
 		log.Printf("%s\n", err_log.Error())
 	} else {
 		defer fp.Close()
+		// Keep the logfile handle for later use
+		logFileHandle = fp
 		mfp := io.MultiWriter(fp, os.Stdout)
 		log.SetOutput(mfp)
 	}
@@ -1332,6 +1492,10 @@ func main() {
 		globalSettings.ReplayLog = true
 	}
 
+	if *pingLogReplay == true {
+		log.Printf("PingEFB replay file %s\n", *replayUATFilename)
+		globalSettings.replayPing = true
+	}
 	if globalSettings.DeveloperMode == true {
 		log.Printf("Developer mode set\n")
 	}
@@ -1357,7 +1521,22 @@ func main() {
 
 	reader := bufio.NewReader(os.Stdin)
 
-	if *replayFlag == true {
+	if *pingLogReplay == true {
+		fp := openReplayFile(*replayUATFilename)
+
+		playSpeed := uint64(*replaySpeed)
+		log.Printf("PingEFB Replay speed: %dx\n", playSpeed)
+		go uatPingReplay(fp, playSpeed)
+
+		for {
+			time.Sleep(1 * time.Second)
+			if uatReplayDone {
+				//&& esDone {
+				return
+			}
+		}
+
+	} else if *replayFlag == true {
 		fp := openReplayFile(*replayUATFilename)
 
 		playSpeed := uint64(*replaySpeed)

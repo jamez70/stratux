@@ -29,6 +29,7 @@ const (
 )
 
 type UATFrame struct {
+	Type         string
 	Raw_data     []byte
 	FISB_data    []byte
 	FISB_month   uint32
@@ -572,6 +573,7 @@ func (u *UATMsg) DecodeUplink() error {
 		thisFrame.Raw_data = data
 		thisFrame.frame_length = frame_length
 		thisFrame.Frame_type = frame_type
+		thisFrame.Type = "Raw"
 
 		thisFrame.decodeInfoFrame()
 
@@ -602,6 +604,7 @@ func (u *UATMsg) GetTextReports() ([]string, error) {
 		for _, m := range f.Text_data {
 			if len(m) > 0 {
 				ret = append(ret, m)
+
 			}
 		}
 	}

@@ -23,8 +23,8 @@
 			<div class="form-horizontal">
 				<div class="row">
 					<div class="col-sm-6 label_adj">
-						<strong class="col-xs-5">Recent Clients:</strong>
-						<span class="col-xs-7">{{Connected_Users}}</span>
+						<strong class="col-xs-5">IP/Socket Clients:</strong>
+						<span class="col-xs-7">{{Connected_Users}} / {{WebsocketClientCount}}</span>
 					</div>
 				</div>
 				<div class="row">
@@ -47,15 +47,16 @@
 				<div class="row" ng-class="{'section_invisible': !visible_uat}">
 					<span class="col-xs-1"></span>
 					<label class="col-xs-3">UAT:</label>
-					<span class="col-xs-6"><div class="bar_container"><div class="bar_display traffic-style2" ng-attr-style="width:{{UAT_messages_max ? 100*UAT_messages_last_minute / UAT_messages_max : 0}}%">{{UAT_messages_last_minute}}</div></div></span>
-					<span class="col-xs-2 text-right">{{UAT_messages_max}}</span>
+					<span class="col-xs-6"><div class="bar_container"><div class="bar_display traffic-style2" ng-attr-style="width:{{UAT_messages_max ? 100*UAT_messages_last_minute / UAT_messages_max : 0}}%"><strong>{{UAT_messages_last_minute}}</strong></div></div></span>
+					<span class="col-xs-2 text-right"><strong>{{UAT_messages_max}}</strong></span>
 				</div>
 				<div class="row" ng-class="{'section_invisible': !visible_es}">
 					<span class="col-xs-1"></span>
 					<label class="col-xs-3">1090ES:</label>
-					<span class="col-xs-6"><div class="bar_container"><div class="bar_display traffic-style1" ng-attr-style="width:{{ES_messages_max ? 100*ES_messages_last_minute / ES_messages_max : 0}}%;">{{ES_messages_last_minute}}</div></div></span>
-					<span class="col-xs-2 text-right">{{ES_messages_max}}</span>
+					<span class="col-xs-6"><div class="bar_container"><div class="bar_display traffic-style1" ng-attr-style="width:{{ES_messages_max ? 100*ES_messages_last_minute / ES_messages_max : 0}}%;"><strong>{{ES_messages_last_minute}}</strong></div></div></span>
+					<span class="col-xs-2 text-right"><strong>{{ES_messages_max}}</strong></span>
 				</div>
+
 				<!--
                 <div id="uat_products" style="display: none;">
                     <div class="row"><span class="col-xs-1">&nbsp;</span></div>

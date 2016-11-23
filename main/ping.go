@@ -136,6 +136,22 @@ func pingNetworkConnection() {
 	// RCB monitor for connection failure and redial
 }
 
+func pingSetLedOn() {
+	data := []byte("1")
+	err := ioutil.WriteFile("/sys/class/gpio/gpio26/value", data, 0)
+	if err != nil {
+		log.Printf("Error writing LED\n")
+	}
+
+}
+func pingSetLedOff() {
+	data := []byte("0")
+	err := ioutil.WriteFile("/sys/class/gpio/gpio26/value", data, 0)
+	if err != nil {
+		log.Printf("Error writing LED\n")
+	}
+}
+
 func pingSerialReader() {
 	//defer pingWG.Done()
 	defer pingSerialPort.Close()
@@ -145,11 +161,12 @@ func pingSerialReader() {
 
 	scanner := bufio.NewScanner(pingSerialPort)
 	for scanner.Scan() && globalStatus.Ping_connected && globalSettings.Ping_Enabled {
+		//pingSetLedOn()
 		s := scanner.Text()
 		// Trimspace removes newlines as well as whitespace
 		s = strings.TrimSpace(s)
-		//logString := fmt.Sprintf("Ping received: %s", s)
-		//log.Println(logString)
+		//		logString := fmt.Sprintf("Ping received: %s", s)
+		//		log.Println(logString)
 		if s[0] == '*' {
 			// 1090ES report
 			// Ping appends a signal strength at the end of the message
@@ -174,6 +191,7 @@ func pingSerialReader() {
 				//log.Println(logString)
 			}
 		} else if s[0] == '+' || s[0] == '-' {
+			pingSetLedOn()
 			// UAT report
 			// Ping appends a signal strength and RS bit errors corrected
 			// at the end of the message
@@ -195,6 +213,7 @@ func pingSerialReader() {
 				//log.Println("Not relaying message, msgtype == 0")
 			}
 		}
+		pingSetLedOff()
 	}
 	globalStatus.Ping_connected = false
 	log.Printf("Exiting Ping serial reader")
@@ -229,6 +248,14 @@ var shutdownPing bool
 func pingWatcher() {
 	prevPingEnabled := false
 
+	data := []byte("26")
+	err := ioutil.WriteFile("/sys/class/gpio/export", data, 0)
+	if err != nil {
+	}
+	data2 := []byte("out")
+	err2 := ioutil.WriteFile("/sys/class/gpio/gpio26/direction", data2, 0)
+	if err2 != nil {
+	}
 	for {
 		time.Sleep(1 * time.Second)
 

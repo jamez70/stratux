@@ -14,14 +14,14 @@ all:
 
 xgen_gdl90:
 	go get -t -d -v ./main ./test ./linux-mpu9150/mpu ./godump978 ./mpu6050 ./uatparse
-	go build $(BUILDINFO) -p 4 main/gen_gdl90.go main/traffic.go main/ry835ai.go main/network.go main/managementinterface.go main/sdr.go main/ping.go main/uibroadcast.go main/monotonic.go main/datalog.go main/equations.go
+	go build -v $(BUILDINFO) -p 3 main/gen_gdl90.go main/traffic.go main/ry835ai.go main/network.go main/export_datalog.go main/managementinterface.go main/sdr.go main/ping.go main/uibroadcast.go main/monotonic.go main/datalog.go main/tracklog.go main/equations.go
 
 xdump1090:
 	git submodule update --init
-	cd dump1090 && make
+	cd dump1090 && make -j4
 
 xdump978:
-	cd dump978 && make lib
+	cd dump978 && make -j4 lib
 	sudo cp -f ./libdump978.so /usr/lib/libdump978.so
 
 xlinux-mpu9150:
@@ -33,21 +33,18 @@ test:
 	make -C test	
 
 www:
-	cd web && make
+	cd web && make -j4
 
 install:
-	cp -f gen_gdl90 /usr/bin/gen_gdl90
-	chmod 755 /usr/bin/gen_gdl90
-	cp image/10-stratux.rules /etc/udev/rules.d/10-stratux.rules
-	cp image/99-uavionix.rules /etc/udev/rules.d/99-uavionix.rules
+	install -m 0755 gen_gdl90 /usr/bin/gen_gdl90
+	install image/10-stratux.rules /etc/udev/rules.d/10-stratux.rules
+	install image/99-uavionix.rules /etc/udev/rules.d/99-uavionix.rules
 	rm -f /etc/init.d/stratux
-	cp __lib__systemd__system__stratux.service /lib/systemd/system/stratux.service
-	cp __root__stratux-pre-start.sh /root/stratux-pre-start.sh
-	chmod 644 /lib/systemd/system/stratux.service
-	chmod 744 /root/stratux-pre-start.sh
+	install -m 0644 __lib__systemd__system__stratux.service /lib/systemd/system/stratux.service
+	install -m 744 __root__stratux-pre-start.sh /root/stratux-pre-start.sh
 	ln -fs /lib/systemd/system/stratux.service /etc/systemd/system/multi-user.target.wants/stratux.service
 	make www
-	cp -f dump1090/dump1090 /usr/bin/
+	install -m 0755 dump1090/dump1090 /usr/bin/dump1090
 
 clean:
 	rm -f gen_gdl90 libdump978.so

@@ -63,6 +63,9 @@
 			</div>
 		</div>
 	</div>
+
+    
+    
 </div>
 	
 <div class="col-sm-12">
@@ -102,6 +105,37 @@
 			</div>
 		</div>
 	</div>
+	<div class="panel-group col-sm-6">
+		<div class="panel panel-default">
+			<div class="panel-heading">Recording Settings</div>
+			<div class="panel-body">
+				<div class="form-group">
+					<label class="control-label col-xs-7">Record Situation</label>
+					<div class="col-xs-5">
+						<ui-switch ng-model='RecordSituation' settings-change></ui-switch>
+					</div>
+				</div>
+				<div class="form-group">
+					<label class="control-label col-xs-7">Record Traffic</label>
+					<div class="col-xs-5">
+						<ui-switch ng-model='RecordTraffic' settings-change></ui-switch>
+					</div>
+				</div>
+				<div class="form-group">
+					<label class="control-label col-xs-7">Record UAT</label>
+					<div class="col-xs-5">
+						<ui-switch ng-model='RecordUAT' settings-change></ui-switch>
+					</div>
+				</div>
+				<div class="form-group">
+					<label class="control-label col-xs-7">Record 1090ES</label>
+					<div class="col-xs-5">
+						<ui-switch ng-model='Record1090ES' settings-change></ui-switch>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
 	
 	<div class="panel-group col-sm-6">
 		<div class="panel panel-default">
@@ -132,22 +166,8 @@
 			</div>
 		</div>
 	</div>
-
+    
 </div>
-    <!-- Developer mode area -->
-<div class="col-sm-12">
-	<div ng-show="DeveloperMode" class="panel-group col-sm-6">
-		<div class="panel panel-default">
-			<div class="panel-heading">Developer Options</div>
-			<div class="panel-body">
-				<div class="col-xs-12">
-                <p>Coming soon</p>
-				</div>
-			</div>
-		</div>
-	</div>
-</div>
-
 
 <!--
 <div class="col-sm-12">

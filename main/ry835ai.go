@@ -11,6 +11,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"strconv"
 	"strings"
@@ -55,6 +56,7 @@ type SatelliteInfo struct {
 type SituationData struct {
 	mu_GPS *sync.Mutex
 
+	Type string
 	// From GPS.
 	LastFixSinceMidnightUTC  float32
 	Lat                      float32
@@ -100,6 +102,23 @@ var readyToInitGPS bool // TO-DO: replace with channel control to terminate goro
 
 var satelliteMutex *sync.Mutex
 var Satellites map[string]SatelliteInfo
+
+func getPiRevision() byte {
+
+	ret := byte(0)
+	ret = 0
+	temp, err := ioutil.ReadFile("/proc/device-tree/model")
+	if err == nil {
+		tempStr := strings.Trim(string(temp), "\n")
+		if strings.Contains(tempStr, "Raspberry Pi 3") {
+			ret = 3
+		}
+		if strings.Contains(tempStr, "Raspberry Pi 2") {
+			ret = 2
+		}
+	}
+	return ret
+}
 
 /*
 u-blox5_Referenzmanual.pdf
@@ -167,7 +186,13 @@ func initGPSSerial() bool {
 		baudrate = 4800
 		device = "/dev/prolific0"
 	} else if _, err := os.Stat("/dev/ttyAMA0"); err == nil { // ttyAMA0 is PL011 UART (GPIO pins 8 and 10) on all RPi.
-		device = "/dev/ttyAMA0"
+		// If this is a RPi 3, use ttyS0 instead of ttyAMA0
+		if getPiRevision() == 3 {
+			device = "/dev/ttyS0"
+		} else {
+			device = "/dev/ttyAMA0"
+		}
+
 	} else {
 		log.Printf("No suitable device found.\n")
 		return false
@@ -394,12 +419,14 @@ func initGPSSerial() bool {
 
 func validateNMEAChecksum(s string) (string, bool) {
 	//validate format. NMEA sentences start with "$" and end in "*xx" where xx is the XOR value of all bytes between
-	if !(strings.HasPrefix(s, "$") && strings.Contains(s, "*")) {
+	if !(strings.Contains(s, "$") && strings.Contains(s, "*")) {
 		return "Invalid NMEA message", false
 	}
-
+	// Trim the leading garbage from the string
+	ds_index := strings.Index(s, "$")
+	s_new := s[ds_index:len(s)]
 	// strip leading "$" and split at "*"
-	s_split := strings.Split(strings.TrimPrefix(s, "$"), "*")
+	s_split := strings.Split(strings.TrimPrefix(s_new, "$"), "*")
 	s_out := s_split[0]
 	s_cs := s_split[1]
 
@@ -488,7 +515,7 @@ func processNMEALine(l string) (sentenceUsed bool) {
 
 	l_valid, validNMEAcs := validateNMEAChecksum(l)
 	if !validNMEAcs {
-		log.Printf("GPS error. Invalid NMEA string: %s\n", l_valid) // remove log message once validation complete
+		log.Printf("GPS error. Invalid NMEA string: %s\nString: %s\n", l_valid, l) // remove log message once validation complete
 		return false
 	}
 	x := strings.Split(l_valid, ",")
@@ -646,6 +673,10 @@ func processNMEALine(l string) (sentenceUsed bool) {
 
 			// We've made it this far, so that means we've processed "everything" and can now make the change to mySituation.
 			mySituation = tmpSituation
+
+			if globalStatus.TrackIsRecording {
+				trackSituation()
+			}
 			return true
 		} else if x[1] == "03" { // satellite status message. Only the first 20 satellites will be reported in this message for UBX firmware older than v3.0. Order seems to be GPS, then SBAS, then GLONASS.
 
@@ -951,6 +982,7 @@ func processNMEALine(l string) (sentenceUsed bool) {
 
 		// We've made it this far, so that means we've processed "everything" and can now make the change to mySituation.
 		mySituation = tmpSituation
+
 		return true
 
 	} else if (x[0] == "GNRMC") || (x[0] == "GPRMC") { // Recommended Minimum data. FIXME: Is this needed anymore?
@@ -1068,6 +1100,7 @@ func processNMEALine(l string) (sentenceUsed bool) {
 		// We've made it this far, so that means we've processed "everything" and can now make the change to mySituation.
 		mySituation = tmpSituation
 		setDataLogTimeWithGPS(mySituation)
+
 		return true
 
 	} else if (x[0] == "GNGSA") || (x[0] == "GPGSA") { // Satellite data.
@@ -1609,6 +1642,7 @@ func pollRY835AI() {
 func initRY835AI() {
 	mySituation.mu_GPS = &sync.Mutex{}
 	mySituation.mu_Attitude = &sync.Mutex{}
+	mySituation.Type = "situation"
 	satelliteMutex = &sync.Mutex{}
 	Satellites = make(map[string]SatelliteInfo)
 

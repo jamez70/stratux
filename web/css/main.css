@@ -5,22 +5,22 @@
 .modal {
 }
 .vertical-alignment-helper {
-	display:table;
-	height: 100%;
-	width: 75%;
+    display:table;
+    height: 100%;
+    width: 75%;
 }
 .vertical-align-center {
-	/* To center vertically */
-	display: table-cell;
-	vertical-align: middle;
+    /* To center vertically */
+    display: table-cell;
+    vertical-align: middle;
 }
 
 .modal-content {
-	/* Bootstrap sets the size of the modal in the modal-dialog class, we need to inherit it */
-	width:inherit;
-	height:inherit;
-	/* To center horizontally */
-	margin: 0 auto;
+    /* Bootstrap sets the size of the modal in the modal-dialog class, we need to inherit it */
+    width:inherit;
+    height:inherit;
+    /* To center horizontally */
+    margin: 0 auto;
 }
 
 .traffic-page {}
@@ -132,43 +132,44 @@
 }
 
 .report_TAF {
-	border-radius: 5px;
+    border-radius: 5px;
 	background-color: cornsilk;
 	color: black;
 }
 
 .report_PIREP {
-	border-radius: 5px;
+    border-radius: 5px;
 	background-color: gainsboro;
 	color: black;
 }
 
 .report_WINDS {
-	border-radius: 5px;
+    border-radius: 5px;
 	background-color: lavender;
 	color: black;
 }
 
 .flight_condition_VFR {
-	border-radius: 5px;
+    border-radius: 5px;
 	background-color: forestgreen;
 	color: white;
 }
 
 .flight_condition_MVFR {
-	border-radius: 5px;
+    left-border: 120px;
+    border-radius: 5px;
 	background-color: blue;
 	color: white;
 }
 
 .flight_condition_IFR {
-	border-radius: 5px;
+    border-radius: 5px;
 	background-color: crimson;
 	color: white;
 }
 
 .flight_condition_LIFR {
-	border-radius: 5px;
+    border-radius: 5px;
 	background-color: darkorchid;
 	color: white;
 }
@@ -255,6 +256,53 @@
 .fake-btn-block {
 	display:inline-block;
 	width: 100%;
+}
+
+.sparklist {
+  overflow: visible;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  
+    li {
+      list-style: none;
+      margin-right: 35px;
+        &:hover, &:focus {
+          .sparkline {
+            transform: translate(200px) scale(6);
+          }
+          .index .count {
+            background-color: #0074d9;
+          }
+        }
+    }
+}
+
+.sparkline2 { 
+  display: inline-block;
+  height: 1em;
+  margin: 0 0.5em;
+  transition: all .5s ease;
+}
+
+.sparkline2 .index { 
+    position: relative;
+  float: left; 
+  width: 3px; 
+  height: 1em; 
+}
+
+.sparkline2 .index .count { 
+  display: block; 
+  position: absolute; 
+  bottom: 0; 
+  left: 0; 
+  width: 100%; 
+  height: 0; 
+  background: #AAA;
+  font: 0/0 a;
+  text-shadow: none;
+  color: transparent;
 }
 
 
@@ -381,6 +429,7 @@ input[type="number_format"] {
 	line-height: 28px;
 	margin-bottom: 4px;
 }
+
 
 .switch {
 	cursor: pointer;

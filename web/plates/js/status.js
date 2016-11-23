@@ -5,7 +5,7 @@ StatusCtrl.$inject = ['$rootScope', '$scope', '$state', '$http', '$interval']; /
 function StatusCtrl($rootScope, $scope, $state, $http, $interval) {
 
 	$scope.$parent.helppage = 'plates/status-help.html';
-
+    
 	function connect($scope) {
 		if (($scope === undefined) || ($scope === null))
 			return; // we are getting called once after clicking away from the status page
@@ -54,7 +54,7 @@ function StatusCtrl($rootScope, $scope, $state, $http, $interval) {
 			$scope.GPS_satellites_tracked = status.GPS_satellites_tracked;
 			$scope.GPS_satellites_seen = status.GPS_satellites_seen;
 			$scope.GPS_solution = status.GPS_solution;
-			$scope.GPS_position_accuracy = String(status.GPS_solution ? ", " + status.GPS_position_accuracy.toFixed(1) + " m" : " ");
+			$scope.GPS_position_accuracy = String(status.GPS_solution ? ", " + status.GPS_position_accuracy.toFixed(1) + " m" : " " );
 			$scope.RY835AI_connected = status.RY835AI_connected;
 			$scope.UAT_METAR_total = status.UAT_METAR_total;
 			$scope.UAT_TAF_total = status.UAT_TAF_total;
@@ -68,7 +68,7 @@ function StatusCtrl($rootScope, $scope, $state, $http, $interval) {
 				$scope.visible_errors = true;
 				$scope.Errors = status.Errors;
 			}
-
+            $scope.WebsocketClientCount = status.WebsocketClientCount;
 			var uptime = status.Uptime;
 			if (uptime != undefined) {
 				var up_d = parseInt((uptime/1000) / 86400),
@@ -90,6 +90,7 @@ function StatusCtrl($rootScope, $scope, $state, $http, $interval) {
 			$scope.$apply(); // trigger any needed refreshing of data
 		};
 	}
+
 
 	function setHardwareVisibility() {
 		$scope.visible_uat = true;
@@ -133,7 +134,7 @@ function StatusCtrl($rootScope, $scope, $state, $http, $interval) {
 			$scope.raw_data = "error getting tower data";
 		});
 	};
-
+    
 	// periodically get the tower list
 	var updateTowers = $interval(function () {
 		// refresh tower count once each 5 seconds (aka polling)

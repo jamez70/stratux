@@ -6,7 +6,7 @@ function SettingsCtrl($rootScope, $scope, $state, $location, $window, $http) {
 
 	$scope.$parent.helppage = 'plates/settings-help.html';
 
-	var toggles = ['UAT_Enabled', 'ES_Enabled', 'Ping_Enabled', 'GPS_Enabled', 'AHRS_Enabled', 'DisplayTrafficSource', 'DEBUG', 'ReplayLog']; 
+	var toggles = ['UAT_Enabled', 'ES_Enabled', 'Ping_Enabled', 'GPS_Enabled', 'AHRS_Enabled', 'DisplayTrafficSource', 'DEBUG', 'ReplayLog', 'RecordSituation', 'RecordTraffic', 'RecordUAT', 'Record1090ES' ]; 
 	var settings = {};
 	for (i = 0; i < toggles.length; i++) {
 		settings[toggles[i]] = undefined;
@@ -33,7 +33,11 @@ function SettingsCtrl($rootScope, $scope, $state, $location, $window, $http) {
 		$scope.PPM = settings.PPM;
 		$scope.WatchList = settings.WatchList;
 		$scope.OwnshipModeS = settings.OwnshipModeS;
-		$scope.DeveloperMode = settings.DeveloperMode;
+        $scope.DeveloperMode = settings.DeveloperMode;
+        $scope.RecordSituation = settings.RecordSituation;
+        $scope.RecordTraffic = settings.RecordTraffic;
+        $scope.RecordUAT = settings.RecordUAT;
+        $scope.Record1090ES = settings.Record1090ES;
 	}
 
 	function getSettings() {
